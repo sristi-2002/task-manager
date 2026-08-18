@@ -103,16 +103,26 @@ android {
 
     flavorDimensions "env"
     productFlavors {
+        // All three flavors share applicationId "com.taskmanager" so the single
+        // google-services.json works out of the box. Environments differ by the
+        // .env file bound above and by app label.
+        //
+        // To install dev/staging/prod side by side, uncomment the two
+        // applicationIdSuffix lines below, then register com.taskmanager.dev and
+        // com.taskmanager.staging as extra Android apps in the same Firebase
+        // project and re-download google-services.json. Without that, those
+        // builds fail at :app:processDebugGoogleServices with
+        // "No matching client found for package name".
         dev {
             dimension "env"
-            applicationIdSuffix ".dev"
+            // applicationIdSuffix ".dev"
             // applicationIdSuffix changes the applicationId but not the Java
             // package; react-native-config reads BuildConfig from the latter.
             resValue "string", "build_config_package", "com.taskmanager"
         }
         staging {
             dimension "env"
-            applicationIdSuffix ".staging"
+            // applicationIdSuffix ".staging"
             resValue "string", "build_config_package", "com.taskmanager"
         }
         prod {

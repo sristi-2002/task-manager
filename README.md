@@ -136,12 +136,16 @@ npm run android:prod       # production (release build)
 
 | Script | Variant | applicationId | Env file |
 |---|---|---|---|
-| `android:dev` | `devDebug` | `com.taskmanager.dev` | `.env.development` |
-| `android:staging` | `stagingDebug` | `com.taskmanager.staging` | `.env.staging` |
+| `android:dev` | `devDebug` | `com.taskmanager` | `.env.development` |
+| `android:staging` | `stagingDebug` | `com.taskmanager` | `.env.staging` |
 | `android:prod` | `prodRelease` | `com.taskmanager` | `.env.production` |
 
-All three install side by side on one device. The active environment is shown
-in-app under **Settings → About**.
+The active environment is shown in-app under **Settings → About**.
+
+All three flavors share one `applicationId` by default so the single
+`google-services.json` works with no console setup. To install them side by side
+instead, uncomment the two `applicationIdSuffix` lines in
+`android/app/build.gradle` and complete step 2 of Firebase setup below.
 
 ### Environment variables
 
@@ -164,13 +168,12 @@ secrets belong in `.env.local`, which is gitignored.
 
 1. **Enable sign-in:** Firebase console → Authentication → Sign-in method →
    enable **Email/Password**.
-2. **Register all three package names** in the same Firebase project:
-   - `com.taskmanager`
+2. *(Optional — only for side-by-side installs.)* Register the extra package
+   names in the same Firebase project, then re-download `google-services.json`
+   into `android/app/`:
    - `com.taskmanager.dev`
    - `com.taskmanager.staging`
-3. Download the resulting `google-services.json` (it will contain all three
-   client entries) into `android/app/`.
-4. **Deploy security rules** from `firestore.rules`, which restrict every
+3. **Deploy security rules** from `firestore.rules`, which restrict every
    document to its owner:
 
    ```
@@ -179,11 +182,10 @@ secrets belong in `.env.local`, which is gitignored.
    }
    ```
 
-> **If you skip step 2**, `devDebug` and `stagingDebug` builds fail at Firebase
-> initialisation because no client entry matches their applicationId. To avoid
-> the console work entirely, delete the two `applicationIdSuffix` lines from
-> `android/app/build.gradle` — all three flavors then share `com.taskmanager` and
-> differ only by `.env` values, at the cost of not installing side by side.
+> **If you enable `applicationIdSuffix` without doing step 2**, `devDebug` and
+> `stagingDebug` fail at `:app:processDevDebugGoogleServices` with
+> `No matching client found for package name 'com.taskmanager.dev'`. The default
+> configuration avoids this entirely.
 
 `google-services.json` is committed for reviewer convenience. In a real product
 it would be injected by CI per environment.
