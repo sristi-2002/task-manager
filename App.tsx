@@ -7,6 +7,10 @@ import RootNavigator from './src/navigation/RootNavigator';
 import {ErrorBoundary} from './src/components';
 import {ThemeProvider} from './src/theme/ThemeProvider';
 import {initializeTaskDatabase} from './src/services/database/taskDatabase';
+import {
+  createReminderChannel,
+  requestNotificationPermission,
+} from './src/services/notifications/notificationService';
 import {logger} from './src/utils/logger';
 
 const App = () => {
@@ -14,9 +18,12 @@ const App = () => {
     const initialize = async () => {
       try {
         await initializeTaskDatabase();
-        logger.info('Database initialization complete');
+        // The channel must exist before any reminder is scheduled against it.
+        await createReminderChannel();
+        await requestNotificationPermission();
+        logger.info('App initialization complete');
       } catch (error) {
-        logger.error('Database initialization failed', error);
+        logger.error('App initialization failed', error);
       }
     };
 

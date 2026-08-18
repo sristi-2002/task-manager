@@ -5,4 +5,6 @@ export type AuthStackParamList = {
 
 export type AppStackParamList = {
   Tasks: undefined;
+  TaskForm: {taskId?: string};
+  Settings: undefined;
 };
