@@ -73,3 +73,7 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# .env.* files are committed intentionally - they hold no secrets.
+# Real secrets belong in .env.local, which is ignored:
+.env.local

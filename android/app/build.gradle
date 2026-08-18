@@ -1,6 +1,21 @@
 apply plugin: "com.android.application"
+apply plugin: "com.google.gms.google-services"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+
+/**
+ * Binds each build variant to its .env file. Keys are lowercase
+ * <flavor><BuildType> exactly as Gradle names the variant.
+ */
+project.ext.envConfigFiles = [
+    devdebug      : ".env.development",
+    devrelease    : ".env.development",
+    stagingdebug  : ".env.staging",
+    stagingrelease: ".env.staging",
+    proddebug     : ".env.production",
+    prodrelease   : ".env.production",
+]
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -85,6 +100,26 @@ android {
         versionCode 1
         versionName "1.0"
     }
+
+    flavorDimensions "env"
+    productFlavors {
+        dev {
+            dimension "env"
+            applicationIdSuffix ".dev"
+            // applicationIdSuffix changes the applicationId but not the Java
+            // package; react-native-config reads BuildConfig from the latter.
+            resValue "string", "build_config_package", "com.taskmanager"
+        }
+        staging {
+            dimension "env"
+            applicationIdSuffix ".staging"
+            resValue "string", "build_config_package", "com.taskmanager"
+        }
+        prod {
+            dimension "env"
+        }
+    }
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
