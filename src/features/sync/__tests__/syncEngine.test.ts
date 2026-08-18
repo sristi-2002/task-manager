@@ -145,4 +145,22 @@ describe('syncEngine', () => {
 
     expect(deps.getPendingTasks).toHaveBeenCalledTimes(1);
   });
+
+  it('releases the in-flight guard when a push hangs, so later syncs still run', async () => {
+    // Mirrors Firestore's real behaviour: an unreachable backend leaves
+    // batch.commit() pending forever rather than rejecting.
+    const deps = makeDeps({
+      getPendingTasks: jest.fn().mockResolvedValue([task()]),
+      pushTasks: jest.fn().mockImplementation(() => new Promise(() => {})),
+    });
+
+    const engine = createSyncEngine(deps, {timeoutMs: 50});
+
+    await expect(engine.runSync('u1')).rejects.toThrow(/timed out/);
+
+    // The guard must have cleared: a second run reaches the repository again.
+    deps.getPendingTasks = jest.fn().mockResolvedValue([]);
+    await engine.runSync('u1');
+    expect(deps.getPendingTasks).toHaveBeenCalledTimes(1);
+  });
 });

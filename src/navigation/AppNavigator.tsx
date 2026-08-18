@@ -1,30 +1,31 @@
-import React, {lazy} from 'react';
+import React from 'react';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 
-import {lazyScreen} from './lazyScreen';
 import type {AppStackParamList} from './types';
-
-const TaskListScreen = lazy(() => import('../screens/app/TaskListScreen'));
-const TaskFormScreen = lazy(() => import('../screens/app/TaskFormScreen'));
-const SettingsScreen = lazy(() => import('../screens/app/SettingsScreen'));
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
+/**
+ * Screens are lazy-loaded via getComponent: the require() runs the first time
+ * a screen is navigated to, not at navigator construction. React.lazy is
+ * deliberately avoided — it routes through Metro's async bundle splitting,
+ * which is unreliable in bare React Native.
+ */
 const AppNavigator = () => (
   <Stack.Navigator>
     <Stack.Screen
       name="Tasks"
-      component={lazyScreen(TaskListScreen)}
+      getComponent={() => require('../screens/app/TaskListScreen').default}
       options={{headerShown: false}}
     />
     <Stack.Screen
       name="TaskForm"
-      component={lazyScreen(TaskFormScreen)}
+      getComponent={() => require('../screens/app/TaskFormScreen').default}
       options={{title: 'Task', presentation: 'modal'}}
     />
     <Stack.Screen
       name="Settings"
-      component={lazyScreen(SettingsScreen)}
+      getComponent={() => require('../screens/app/SettingsScreen').default}
       options={{title: 'Settings'}}
     />
   </Stack.Navigator>

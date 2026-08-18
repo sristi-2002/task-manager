@@ -1,19 +1,27 @@
-import React, {lazy} from 'react';
+import React from 'react';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 
-import {lazyScreen} from './lazyScreen';
 import type {AuthStackParamList} from './types';
-
-const LoginScreen = lazy(() => import('../screens/auth/LoginScreen'));
-const SignupScreen = lazy(() => import('../screens/auth/SignupScreen'));
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
+/**
+ * Screens are lazy-loaded via getComponent: the require() runs the first time
+ * a screen is navigated to, not at navigator construction. React.lazy is
+ * deliberately avoided — it routes through Metro's async bundle splitting,
+ * which is unreliable in bare React Native.
+ */
 const AuthNavigator = () => (
   // Both screens render their own headings.
   <Stack.Navigator screenOptions={{headerShown: false}}>
-    <Stack.Screen name="Login" component={lazyScreen(LoginScreen)} />
-    <Stack.Screen name="Signup" component={lazyScreen(SignupScreen)} />
+    <Stack.Screen
+      name="Login"
+      getComponent={() => require('../screens/auth/LoginScreen').default}
+    />
+    <Stack.Screen
+      name="Signup"
+      getComponent={() => require('../screens/auth/SignupScreen').default}
+    />
   </Stack.Navigator>
 );
 

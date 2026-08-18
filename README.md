@@ -81,7 +81,7 @@ src/
     auth/         authSlice
     tasks/        taskSlice, selectors
     sync/         syncEngine, syncController, conflict, syncSlice
-  navigation/     Root/Auth/App navigators, lazy screen wrapper
+  navigation/     Root/Auth/App navigators, typed param lists
   screens/
     auth/         Login, Signup
     app/          TaskList, TaskForm, Settings
@@ -189,6 +189,24 @@ secrets belong in `.env.local`, which is gitignored.
 
 `google-services.json` is committed for reviewer convenience. In a real product
 it would be injected by CI per environment.
+
+---
+
+## Performance
+
+- `TaskRow` is wrapped in `React.memo` with an explicit comparator covering only
+  the fields the row paints, and `renderItem` is a `useCallback` — so toggling
+  one task does not re-render the rest of the list.
+- Every row is a fixed `TASK_ROW_HEIGHT` (88px including margin), which enables
+  `getItemLayout`. That is the change that actually makes long lists cheap: the
+  list can jump to any offset without measuring intermediate rows.
+- `keyExtractor`, `removeClippedSubviews`, and tuned `initialNumToRender` /
+  `maxToRenderPerBatch` / `windowSize` / `updateCellsBatchingPeriod`.
+- Screens are lazy-loaded via React Navigation's `getComponent`, so a screen's
+  module is required the first time it is navigated to rather than at navigator
+  construction. `React.lazy` was tried first and removed: it routes through
+  Metro's async bundle splitting, which fails to parse the generated chunk in
+  bare React Native 0.87 and crashes the app with a render error.
 
 ---
 

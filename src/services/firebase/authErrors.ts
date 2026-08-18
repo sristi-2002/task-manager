@@ -15,6 +15,12 @@ const MESSAGES: Record<string, string> = {
   'auth/network-request-failed':
     'No connection. Check your network and try again.',
   'auth/user-disabled': 'This account has been disabled.',
+  // Firebase reports CONFIGURATION_NOT_FOUND as an internal error. In practice
+  // it almost always means Email/Password sign-in is switched off for the project.
+  'auth/operation-not-allowed':
+    'Email/password sign-in is not enabled for this Firebase project.',
+  'auth/internal-error':
+    'Email/password sign-in is not enabled for this Firebase project. Enable it in Firebase console → Authentication → Sign-in method.',
 };
 
 export const mapAuthError = (code: string): string =>

@@ -18,7 +18,37 @@ export type SyncDeps = {
   setWatermark: (userId: string, value: string) => Promise<void>;
 };
 
-export const createSyncEngine = (deps: SyncDeps) => {
+export type SyncOptions = {timeoutMs?: number};
+
+/**
+ * Firestore's SDK retries a write stream indefinitely when the backend is
+ * unreachable — batch.commit() neither resolves nor rejects. Without a timeout
+ * the in-flight guard would never clear and sync would be dead until restart.
+ */
+const withTimeout = <T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      value => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+
+export const createSyncEngine = (deps: SyncDeps, options: SyncOptions = {}) => {
+  const timeoutMs = options.timeoutMs ?? 15000;
   let inFlight = false;
 
   const push = async (userId: string): Promise<number> => {
@@ -88,8 +118,8 @@ export const createSyncEngine = (deps: SyncDeps) => {
 
     inFlight = true;
     try {
-      const pushed = await push(userId);
-      const pulled = await pull(userId);
+      const pushed = await withTimeout(push(userId), timeoutMs, 'Sync push');
+      const pulled = await withTimeout(pull(userId), timeoutMs, 'Sync pull');
       logger.info(`Sync complete: pushed ${pushed}, pulled ${pulled}`);
       return {pushed, pulled};
     } finally {
