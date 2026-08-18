@@ -1,97 +1,233 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Task Manager
 
-# Getting Started
+An offline-first cross-platform task manager built with React Native CLI. Tasks
+are created, edited and completed against a local SQLite database and replicate
+to Cloud Firestore whenever the device has connectivity. Authentication, storage
+and push messaging all run on Firebase; there is no custom backend.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+---
 
-## Step 1: Start Metro
+## Architecture
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### The central decision: SQLite is the source of truth
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+Every mutation writes to SQLite first and returns immediately. The UI never
+awaits the network. A separate sync engine later reconciles local state with
+Firestore.
 
-```sh
-# Using npm
-npm start
+```
+WRITE PATH (always local, always instant)
 
-# OR using Yarn
-yarn start
+  TaskFormScreen
+        │ dispatch(addTask)
+        ▼
+  taskSlice thunk ──▶ taskRepository ──▶ SQLite
+        │                                (syncStatus = 'pending_create')
+        ├──▶ notificationService.scheduleTaskReminder()
+        └──▶ reducer inserts into Redux
+
+
+SYNC PATH (asynchronous, never blocks the UI)
+
+  NetInfo online ─┐
+  AppState active ├──▶ syncController ──▶ syncEngine.runSync()
+  debounced edit ─┘                            │
+                                               ├─ PUSH: pending_* ──▶ Firestore
+                                               │        (writeBatch, merge)
+                                               └─ PULL: updatedAt > watermark
+                                                        ──▶ SQLite ──▶ reload
 ```
 
-## Step 2: Build and run your app
+Firestore's own offline persistence was the alternative. It was rejected because
+it would make the local database decorative: the brief requires a real local DB
+doing real work, and an explicit queue makes sync state observable — the app can
+show "3 pending" and a per-task indicator, which a transparent cache cannot.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### Layering rule
 
-### Android
+**Screens never import a service. Services never import Redux.**
 
-```sh
-# Using npm
-npm run android
+| Layer | May import | Purpose |
+|---|---|---|
+| `screens/` | components, features, theme | Render and dispatch |
+| `features/` | services, utils | State and orchestration |
+| `services/` | utils only | SQLite, Firebase, Notifee, NetInfo |
 
-# OR using Yarn
-yarn android
+`syncEngine` takes its ten dependencies as an injected object rather than
+importing them. That is what allows its push/pull/conflict logic to be tested
+against an in-memory fake with no device, no emulator and no Firestore.
+
+### Conflict resolution
+
+Last-write-wins on ISO-8601 `updatedAt`. Exact ties resolve to **remote** — an
+arbitrary but fixed rule, so two devices reaching the same tie agree on the
+outcome.
+
+Deletes are **soft on the server** (`deleted: true`). A hard `deleteDoc` would be
+invisible to an `updatedAt >` pull query, so another device would never learn the
+task was removed. The local row is hard-deleted once its tombstone is confirmed.
+
+---
+
+## Project structure
+
+```
+src/
+  app/            Redux store and typed hooks
+  config/         env.ts — validated, typed environment access
+  theme/          tokens, light/dark palettes, ThemeProvider
+  components/     Presentational primitives (no business logic)
+  features/
+    auth/         authSlice
+    tasks/        taskSlice, selectors
+    sync/         syncEngine, syncController, conflict, syncSlice
+  navigation/     Root/Auth/App navigators, lazy screen wrapper
+  screens/
+    auth/         Login, Signup
+    app/          TaskList, TaskForm, Settings
+  services/
+    database/     connection, migrations, taskRepository, syncMetaRepository
+    firebase/     authService, authErrors, taskFirestoreService, messagingService
+    notifications/ notificationService
+    connectivity/ connectivityService
+  utils/          id, datetime, validation, logger
+  types/          task, user
 ```
 
-### iOS
+---
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Libraries used
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+| Library | Why |
+|---|---|
+| `@reduxjs/toolkit` + `react-redux` | Required state manager; thunks model the async local-write path cleanly |
+| `@react-navigation/native` + `native-stack` | Auth/App stack split; native stack for platform-correct transitions |
+| `react-native-nitro-sqlite` | Local database. JSI-based, so reads do not cross the bridge |
+| `@react-native-firebase/app` `auth` `firestore` `messaging` | Auth, remote replica, push. Modular v26 API throughout |
+| `@notifee/react-native` | Local scheduled reminders with exact-alarm support and channel control |
+| `@react-native-community/netinfo` | Connectivity signal that triggers sync |
+| `react-native-config` | Binds `.env` files to build flavors |
+| `@react-native-async-storage/async-storage` | Persists the theme preference |
+| `@react-native-community/datetimepicker` | Native date/time selection for reminders |
+
+---
+
+## Running the app
+
+### Prerequisites
+
+- Node **>= 22.11.0**
+- JDK **17**
+- Android SDK with an emulator or a connected device
+
+### Install
 
 ```sh
-bundle install
+npm install
 ```
 
-Then, and every time you update your native dependencies, run:
+### Run per environment
 
 ```sh
-bundle exec pod install
+npm run android:dev        # development
+npm run android:staging    # staging
+npm run android:prod       # production (release build)
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+| Script | Variant | applicationId | Env file |
+|---|---|---|---|
+| `android:dev` | `devDebug` | `com.taskmanager.dev` | `.env.development` |
+| `android:staging` | `stagingDebug` | `com.taskmanager.staging` | `.env.staging` |
+| `android:prod` | `prodRelease` | `com.taskmanager` | `.env.production` |
+
+All three install side by side on one device. The active environment is shown
+in-app under **Settings → About**.
+
+### Environment variables
+
+| Key | Meaning |
+|---|---|
+| `APP_ENV` | `development` \| `staging` \| `production` |
+| `APP_NAME` | Display name shown in Settings |
+| `ENABLE_LOGGING` | `true` enables debug/info logs; errors always log |
+| `SYNC_DEBOUNCE_MS` | Delay before a burst of local edits triggers one sync |
+
+`src/config/env.ts` validates these at startup and throws naming the missing key,
+rather than letting `undefined` surface three screens later.
+
+The `.env.*` files are committed deliberately — they contain no secrets. Real
+secrets belong in `.env.local`, which is gitignored.
+
+---
+
+## Firebase setup
+
+1. **Enable sign-in:** Firebase console → Authentication → Sign-in method →
+   enable **Email/Password**.
+2. **Register all three package names** in the same Firebase project:
+   - `com.taskmanager`
+   - `com.taskmanager.dev`
+   - `com.taskmanager.staging`
+3. Download the resulting `google-services.json` (it will contain all three
+   client entries) into `android/app/`.
+4. **Deploy security rules** from `firestore.rules`, which restrict every
+   document to its owner:
+
+   ```
+   match /users/{userId}/tasks/{taskId} {
+     allow read, write: if request.auth != null && request.auth.uid == userId;
+   }
+   ```
+
+> **If you skip step 2**, `devDebug` and `stagingDebug` builds fail at Firebase
+> initialisation because no client entry matches their applicationId. To avoid
+> the console work entirely, delete the two `applicationIdSuffix` lines from
+> `android/app/build.gradle` — all three flavors then share `com.taskmanager` and
+> differ only by `.env` values, at the cost of not installing side by side.
+
+`google-services.json` is committed for reviewer convenience. In a real product
+it would be injected by CI per environment.
+
+---
+
+## Testing
 
 ```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+npm test              # 47 tests
+npx tsc --noEmit      # type check
+npm run lint          # eslint
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+Covered:
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+- **Sync engine** (9 tests) — push/pull cycle, tombstone handling, watermark
+  advancement, the in-flight guard, and the rule that a failed push must not
+  mark rows synced.
+- **Conflict resolution** — last-write-wins in both directions plus tie-breaking.
+- **Reducers and selectors** — auth and task state transitions, pending counts.
+- **Validation and config** — field rules and environment parsing.
 
-## Step 3: Modify your app
+Deliberately not covered: screen render/snapshot tests. They are expensive to
+maintain and catch little here; the logic worth protecting lives below the UI and
+is tested directly.
 
-Now that you have successfully run the app, let's make changes!
+---
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## Known limitations
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- **Last-write-wins loses concurrent field edits.** If two devices edit different
+  fields of one task while offline, the later write replaces the whole document.
+  Correct resolution needs per-field versioning or CRDTs, which is out of scope.
+- **Android clears scheduled alarms on reboot.** Reminders are re-armed the next
+  time the app opens and tasks load, not at boot.
+- **Pull is watermark polling, not a realtime listener.** Changes from another
+  device appear on the next sync (connectivity change, app foreground, or local
+  edit) rather than instantly. `syncEngine.pull` is isolated, so swapping in an
+  `onSnapshot` listener is a change to one function.
+- **iOS is code-complete but not configured.** All code is cross-platform and
+  avoids Android-only APIs, but `GoogleService-Info.plist`, the Podfile Firebase
+  setup and notification entitlements are not done. Android only for now.
+- **Exact alarms may be downgraded.** If `SCHEDULE_EXACT_ALARM` is unavailable,
+  reminders fall back to inexact timing and can fire a few minutes late.
+- **No token refresh handling for FCM.** The token is read at login;
+  `onTokenRefresh` is not wired, so a rotated token is picked up at next sign-in.
